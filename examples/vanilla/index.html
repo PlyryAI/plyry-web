@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Custom Plyry sign-in</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --plyry-page: #f5f6f8;
+        --plyry-panel: #fff;
+        --plyry-text: #1b1e24;
+        --plyry-muted: #606875;
+        --plyry-border: #d9dde4;
+        --plyry-accent: #5946d2;
+        --plyry-radius: 12px;
+        font: 16px/1.45 system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --plyry-page: #121318;
+          --plyry-panel: #1b1d25;
+          --plyry-text: #f1f2f6;
+          --plyry-muted: #a8adba;
+          --plyry-border: #383b46;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; padding: 6vh 1rem; background: var(--plyry-page); color: var(--plyry-text); }
+      main { width: min(100%, 440px); margin: 0 auto; padding: 1.5rem; background: var(--plyry-panel); border: 1px solid var(--plyry-border); border-radius: var(--plyry-radius); }
+      h1 { margin: 0; font-size: 1.35rem; }
+      p { color: var(--plyry-muted); }
+      label { display: block; margin: 1rem 0 .3rem; font-weight: 600; }
+      input { width: 100%; min-height: 2.8rem; padding: .65rem .75rem; border: 1px solid var(--plyry-border); border-radius: 8px; background: transparent; color: inherit; font: inherit; }
+      button { min-height: 2.8rem; margin: .8rem .45rem 0 0; padding: .55rem .9rem; border: 0; border-radius: 8px; background: var(--plyry-accent); color: white; font: inherit; cursor: pointer; }
+      button.secondary { border: 1px solid var(--plyry-border); background: transparent; color: inherit; }
+      [hidden] { display: none !important; }
+      #status { min-height: 1.6em; margin-top: 1rem; }
+      #status[data-error="true"] { color: #c33d4f; }
+      .note { margin-top: 1rem; font-size: .88rem; color: var(--plyry-muted); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Connect your Plyry account</h1>
+      <p>This example owns its sign-in form and styles. The package supplies API calls and session state only.</p>
+      <section id="signed-out">
+        <form id="sign-in-form">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="email" required>
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+          <button type="submit">Sign in</button>
+        </form>
+        <button id="start-signup" class="secondary" type="button">Create an account</button>
+        <div id="signup-fields" hidden>
+          <p id="challenge-question"></p>
+          <label for="answer">Answer</label>
+          <input id="answer" inputmode="numeric">
+          <button id="finish-signup" type="button">Create account</button>
+        </div>
+      </section>
+      <section id="signed-in" hidden>
+        <p>Connected as <strong id="account-email"></strong></p>
+        <button id="sign-out" class="secondary" type="button">Sign out</button>
+      </section>
+      <p id="status" role="status" aria-live="polite"></p>
+      <p class="note">Serve this folder over HTTPS or localhost. Browser origin binding and CORS are handled by the API.</p>
+    </main>
+    <script type="module">
+      import { PlyryClient, createPlyrySessionController } from "../../dist/index.js";
+
+      const client = new PlyryClient({ appName: "Plyry Vanilla Example" });
+      const session = createPlyrySessionController(client);
+      const signedOut = document.querySelector("#signed-out");
+      const signedIn = document.querySelector("#signed-in");
+      const status = document.querySelector("#status");
+      const email = document.querySelector("#email");
+      const password = document.querySelector("#password");
+      let challenge = null;
+
+      session.subscribe((state) => {
+        const connected = state.status === "signed_in";
+        signedOut.hidden = connected;
+        signedIn.hidden = !connected;
+        document.querySelector("#account-email").textContent = state.account?.email ?? "your Plyry account";
+        status.textContent = state.error?.message ?? state.warning ?? state.status;
+        status.dataset.error = String(Boolean(state.error));
+      });
+
+      document.querySelector("#sign-in-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          await session.signIn({ email: email.value, password: password.value });
+          password.value = "";
+        } catch (error) {
+          password.value = "";
+          status.textContent = error.message;
+          status.dataset.error = "true";
+        }
+      });
+
+      document.querySelector("#start-signup").addEventListener("click", async () => {
+        try {
+          challenge = await session.createSignupChallenge(email.value);
+          document.querySelector("#challenge-question").textContent = challenge.question;
+          document.querySelector("#signup-fields").hidden = false;
+        } catch (error) {
+          status.textContent = error.message;
+          status.dataset.error = "true";
+        }
+      });
+
+      document.querySelector("#finish-signup").addEventListener("click", async () => {
+        if (!challenge) return;
+        try {
+          await session.signUp({
+            email: email.value,
+            password: password.value,
+            signupChallenge: challenge.signup_challenge,
+            answer: document.querySelector("#answer").value,
+          });
+          password.value = "";
+        } catch (error) {
+          password.value = "";
+          status.textContent = error.message;
+          status.dataset.error = "true";
+        }
+      });
+
+      document.querySelector("#sign-out").addEventListener("click", async () => {
+        try { await session.signOut(); }
+        catch (error) { status.textContent = error.message; }
+      });
+
+      session.restore().catch(() => {});
+    </script>
+  </body>
+</html>
